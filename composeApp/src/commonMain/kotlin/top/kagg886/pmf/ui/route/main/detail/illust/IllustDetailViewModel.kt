@@ -46,7 +46,7 @@ import top.kagg886.pmf.ui.util.notifyLike
 import top.kagg886.pmf.util.UGOIRA_SCHEME
 import top.kagg886.pmf.util.getString
 
-class IllustDetailViewModel(private val illust: Illust) :
+class IllustDetailViewModel(private val illustId: Long) :
     ContainerHost<IllustDetailViewState, IllustDetailSideEffect>,
     ViewModel(),
     KoinComponent {
@@ -54,6 +54,8 @@ class IllustDetailViewModel(private val illust: Illust) :
         container(IllustDetailViewState.Loading()) { load() }
 
     private val client = PixivConfig.newAccountFromConfig()
+    private val database by inject<AppDatabase>()
+    private val black = database.blacklistDAO()
 
     fun toggleOrigin() = intent {
         val s = state
@@ -76,6 +78,21 @@ class IllustDetailViewModel(private val illust: Illust) :
     }
 
     fun load(showLoading: Boolean = true) = intent {
+        if (showLoading && state !is IllustDetailViewState.Success && IllustWarmCache.get(illustId) == null) {
+            reduce {
+                IllustDetailViewState.Loading()
+            }
+        }
+
+        val resolved = resolveInitialIllust()
+        if (resolved == null) {
+            reduce {
+                IllustDetailViewState.Error
+            }
+            return@intent
+        }
+        val (illust, fetchedFresh) = resolved
+
         if (black.matchRules(BlackListType.AUTHOR_ID, illust.user.id.toString())) {
             postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.blocking_because_black, getString(Res.string.user))))
             postSideEffect(IllustDetailSideEffect.NavigateBack)
@@ -90,19 +107,19 @@ class IllustDetailViewModel(private val illust: Illust) :
 
         val inWatchLater = database.watchLaterDAO().exists(WatchLaterType.ILLUST, illust.id.toLong())
 
-        val loadingState = IllustDetailViewState.Loading()
-        if (showLoading) {
-            reduce {
-                loadingState
-            }
-        }
-
         if (illust.isUgoira) {
+            val loadingState = IllustDetailViewState.Loading()
+            if (showLoading || state !is IllustDetailViewState.Success) {
+                reduce {
+                    loadingState
+                }
+            }
             loadingState.data.tryEmit(getString(Res.string.getting_ugoira_metadata))
             val meta = client.getUgoiraMetadata(illust)
             val data = Json.encodeToString(meta).encodeBase64()
             val url = "$UGOIRA_SCHEME://$data".toUri()
             reduce { IllustDetailViewState.Success(illust, inWatchLater, url) }
+            IllustWarmCache.put(illust)
             saveDataBase(illust)
             return@intent
         }
@@ -119,71 +136,62 @@ class IllustDetailViewModel(private val illust: Illust) :
         reduce {
             IllustDetailViewState.Success(illust, inWatchLater, img)
         }
+        IllustWarmCache.put(illust)
 
-        // 部分API返回信息不全，需要重新拉取
+        if (fetchedFresh) {
+            saveDataBase(illust)
+            if (illust.contentImages[IllustImagesType.ORIGIN] == null) {
+                postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.get_original_fail)))
+            }
+            return@intent
+        }
+
         intent a@{
             val result = runCatching {
-                client.getIllustDetail(illust.id.toLong())
+                client.getIllustDetail(illustId)
             }
             if (result.isFailure) {
                 postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.get_illust_info_fail)))
                 return@a
             }
-            val i = result.getOrThrow()
-            if (i.contentImages[IllustImagesType.ORIGIN] == null) {
+            val refreshed = result.getOrThrow()
+            if (refreshed.contentImages[IllustImagesType.ORIGIN] == null) {
                 postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.get_original_fail)))
             }
-            saveDataBase(i)
+            IllustWarmCache.put(refreshed)
+            saveDataBase(refreshed)
 
-            val options = buildList {
-                if (AppConfig.showOriginalImage) {
-                    add(IllustImagesType.ORIGIN)
-                }
-                add(IllustImagesType.LARGE)
-                add(IllustImagesType.MEDIUM)
-            }
-
-            val img = i.contentImages.get(*options.toTypedArray())!!.map(String::toUri)
+            val refreshedImages = refreshed.contentImages.get(*options.toTypedArray())!!.map(String::toUri)
             reduce {
-                IllustDetailViewState.Success(i, inWatchLater, img)
+                IllustDetailViewState.Success(refreshed, inWatchLater, refreshedImages)
             }
         }
     }
 
-//    fun loadByIllustId(id: Long, silent: Boolean = true) = intent {
-//        if (silent) {
-//            reduce { IllustDetailViewState.Loading }
-//        }
-//        val illust = kotlin.runCatching {
-//            client.getIllustDetail(id)
-//        }
-//        if (illust.isFailure) {
-//            if (silent) {
-//                reduce { IllustDetailViewState.Error }
-//            }
-//            return@intent
-//        }
-//        loadByIllustBean(illust.getOrThrow())
-//    }
-//
-//    fun loadByIllustBean(illust: Illust) = intent {
-//        reduce {
-//            IllustDetailViewState.Loading
-//        }
-//        reduce { IllustDetailViewState.Success(illust) }
-//        saveDataBase()
-//    }
+    private suspend fun resolveInitialIllust(): Pair<Illust, Boolean>? {
+        val current = (container.stateFlow.value as? IllustDetailViewState.Success)?.illust ?: IllustWarmCache.get(illustId)
+        if (current != null) {
+            return current to false
+        }
 
-    private val database by inject<AppDatabase>()
+        val result = runCatching {
+            client.getIllustDetail(illustId)
+        }
+        if (result.isFailure) {
+            return null
+        }
 
-    private fun saveDataBase(i: Illust) = intent {
+        return result.getOrThrow().also(IllustWarmCache::put) to true
+    }
+
+    private suspend fun saveDataBase(illust: Illust) {
         if (!AppConfig.recordIllustHistory) {
-            return@intent
+            return
         }
         database.illustHistoryDAO().insert(
             IllustHistory(
-                id = i.id,
-                illust = i,
+                id = illust.id,
+                illust = illust,
                 createTime = Clock.System.now().toEpochMilliseconds(),
             ),
         )
@@ -195,7 +203,7 @@ class IllustDetailViewModel(private val illust: Illust) :
             database.watchLaterDAO().insert(
                 WatchLaterItem(
                     type = WatchLaterType.ILLUST,
-                    payload = illust.id.toLong(),
+                    payload = state.illust.id.toLong(),
                     metadata = Json.encodeToJsonElement(state.illust).jsonObject,
                 ),
             )
@@ -213,7 +221,7 @@ class IllustDetailViewModel(private val illust: Illust) :
         runOn<IllustDetailViewState.Success> {
             database.watchLaterDAO().delete(
                 type = WatchLaterType.ILLUST,
-                payload = illust.id.toLong(),
+                payload = state.illust.id.toLong(),
             )
 
             reduce {
@@ -241,8 +249,9 @@ class IllustDetailViewModel(private val illust: Illust) :
                 postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.bookmark_failed)))
                 return@runOn
             }
+            IllustWarmCache.put(state.illust)
             postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.bookmark_success)))
-            illust.notifyLike()
+            state.illust.notifyLike()
         }
     }
 
@@ -257,8 +266,9 @@ class IllustDetailViewModel(private val illust: Illust) :
                 postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.un_bookmark_failed)))
                 return@runOn
             }
+            IllustWarmCache.put(state.illust)
             postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.un_bookmark_success)))
-            illust.notifyDislike()
+            state.illust.notifyDislike()
         }
     }
 
@@ -281,8 +291,9 @@ class IllustDetailViewModel(private val illust: Illust) :
                 postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.follow_success)))
             }
             reduce {
-                val illust = with(state.illust) { copy(user = user.copy(isFollowed = true)) }
-                state.copy(illust = illust)
+                val updatedIllust = with(state.illust) { copy(user = user.copy(isFollowed = true)) }
+                IllustWarmCache.put(updatedIllust)
+                state.copy(illust = updatedIllust)
             }
         }
     }
@@ -299,13 +310,12 @@ class IllustDetailViewModel(private val illust: Illust) :
             }
             postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.unfollow_success)))
             reduce {
-                val illust = with(state.illust) { copy(user = user.copy(isFollowed = true)) }
-                state.copy(illust = illust)
+                val updatedIllust = with(state.illust) { copy(user = user.copy(isFollowed = true)) }
+                IllustWarmCache.put(updatedIllust)
+                state.copy(illust = updatedIllust)
             }
         }
     }
-
-    private val black = database.blacklistDAO()
 
     @OptIn(OrbitExperimental::class)
     fun black() = intent {

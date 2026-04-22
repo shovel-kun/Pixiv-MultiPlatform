@@ -296,7 +296,6 @@ fun App(start: NavKey = WelcomeRoute) {
                                     )
                                     if (result == SnackbarResult.ActionPerformed) {
                                         stack += ProfileRoute(
-                                            PixivConfig.pixiv_user!!,
                                             ProfileItem.Download,
                                         )
                                     }
@@ -395,7 +394,7 @@ fun AppScaffold(content: @Composable (Modifier) -> Unit) {
 fun ProfileAvatar() {
     val profile = PixivConfig.pixiv_user!!
     val stack = LocalNavBackStack.current
-    IconButton(onClick = { stack += ProfileRoute(profile) }) {
+    IconButton(onClick = { stack += ProfileRoute() }) {
         AsyncImage(
             model = profile.profileImageUrls.content,
             contentDescription = null,
