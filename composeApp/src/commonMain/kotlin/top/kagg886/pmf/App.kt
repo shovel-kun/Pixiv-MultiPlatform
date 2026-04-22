@@ -100,6 +100,7 @@ import org.orbitmvi.orbit.compose.collectSideEffect
 import top.kagg886.pmf.backend.AppConfig
 import top.kagg886.pmf.backend.PlatformConfig
 import top.kagg886.pmf.backend.PlatformEngine
+import top.kagg886.pmf.backend.archive.IllustArchiveFetcher
 import top.kagg886.pmf.backend.cachePath
 import top.kagg886.pmf.backend.currentPlatform
 import top.kagg886.pmf.backend.database.databaseBuilder
@@ -445,6 +446,7 @@ fun ImageLoader.Builder.applyCustomConfig() = apply {
                 connectivityChecker = { ConnectivityChecker.ONLINE },
             ),
         )
+        add(IllustArchiveFetcher.Factory())
         add(UgoiraFetcher.Factory { KoinPlatform.getKoin().get<HttpClient>() })
         installGifDecoder()
     }
