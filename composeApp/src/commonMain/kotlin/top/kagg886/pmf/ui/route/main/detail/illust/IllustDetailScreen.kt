@@ -77,36 +77,51 @@ import top.kagg886.pmf.ui.route.main.search.v2.SearchResultRoute
 import top.kagg886.pmf.ui.util.*
 import top.kagg886.pmf.util.*
 
-class TodoSerializer : KSerializer<List<Illust>> {
-    override val descriptor = PrimitiveSerialDescriptor("Todo", PrimitiveKind.STRING)
+private class IllustListSerializer : KSerializer<List<Illust>> {
+    override val descriptor = PrimitiveSerialDescriptor("IllustList", PrimitiveKind.STRING)
+
     override fun serialize(encoder: Encoder, value: List<Illust>) {
-        val json = Json.encodeToString(value)
-        encoder.encodeString(json)
+        encoder.encodeString(Json.encodeToString(value))
     }
 
     override fun deserialize(decoder: Decoder): List<Illust> {
-        val json = decoder.decodeString()
-        return Json.decodeFromString(json)
+        return Json.decodeFromString(decoder.decodeString())
     }
 }
 
 @Serializable
 data class IllustDetailRoute(
     val index: Int,
-    @Serializable(with = TodoSerializer::class)
-    val todos: List<Illust>,
+    val illustIds: List<Long>,
+    @Serializable(with = IllustListSerializer::class)
+    val snapshots: List<Illust> = emptyList(),
 ) : NavKey
 
-fun IllustDetailRoute(illust: Illust) = IllustDetailRoute(0, listOf(illust))
+fun IllustDetailRoute(illust: Illust): IllustDetailRoute {
+    IllustWarmCache.put(illust)
+    return IllustDetailRoute(index = 0, illustIds = listOf(illust.id.toLong()), snapshots = listOf(illust))
+}
+
+fun createIllustDetailRoute(index: Int, illusts: List<Illust>): IllustDetailRoute {
+    IllustWarmCache.putAll(illusts)
+    val snapshotRange = ((index - 1).coerceAtLeast(0)..(index + 1).coerceAtMost(illusts.lastIndex))
+    return IllustDetailRoute(
+        index = index,
+        illustIds = illusts.map { it.id.toLong() },
+        snapshots = snapshotRange.map { illusts[it] },
+    )
+}
 
 @Composable
 fun IllustDetailScreen(route: IllustDetailRoute) = BoxWithConstraints(Modifier.fillMaxSize()) {
-    val current = route.todos[route.index]
-    val todos = route.todos
-    HorizontalPager(state = rememberPagerState(initialPage = todos.indexOf(current)) { todos.size }) { index ->
-        val illust = todos[index]
-        val model = koinViewModel<IllustDetailViewModel>(key = "${illust.id}") {
-            parametersOf(illust)
+    LaunchedEffect(route.snapshots) {
+        IllustWarmCache.putAll(route.snapshots)
+    }
+    val illustIds = route.illustIds
+    HorizontalPager(state = rememberPagerState(initialPage = route.index) { illustIds.size }) { index ->
+        val illustId = illustIds[index]
+        val model = koinViewModel<IllustDetailViewModel>(key = "$illustId") {
+            parametersOf(illustId)
         }
         val state by model.collectAsState()
         val host = LocalSnackBarHost.current

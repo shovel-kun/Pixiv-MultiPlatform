@@ -49,7 +49,6 @@ import androidx.navigation3.runtime.NavKey
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import top.kagg886.pixko.module.user.SimpleMeProfile
 import top.kagg886.pmf.LocalNavBackStack
 import top.kagg886.pmf.backend.pixiv.PixivConfig
 import top.kagg886.pmf.res.*
@@ -78,13 +77,12 @@ enum class ProfileItem {
 
 @Serializable
 data class ProfileRoute(
-    val profile: SimpleMeProfile,
     val target: ProfileItem = ViewProfile,
 ) : NavKey
 
 @Composable
 fun ProfileScreen(route: ProfileRoute) {
-    val me = route.profile
+    val me = PixivConfig.pixiv_user!!
     var page by rememberSaveable { mutableStateOf(route.target) }
     val drawer = rememberDrawerState(DrawerValue.Open)
     ProfileScreenContainDrawerScaffold(

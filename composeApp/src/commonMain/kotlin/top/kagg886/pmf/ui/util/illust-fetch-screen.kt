@@ -45,7 +45,7 @@ import top.kagg886.pmf.ui.component.icon.R18G
 import top.kagg886.pmf.ui.component.icon.Robot
 import top.kagg886.pmf.ui.component.scroll.VerticalScrollbar
 import top.kagg886.pmf.ui.component.scroll.rememberScrollbarAdapter
-import top.kagg886.pmf.ui.route.main.detail.illust.IllustDetailRoute
+import top.kagg886.pmf.ui.route.main.detail.illust.createIllustDetailRoute
 import top.kagg886.pmf.util.stringResource
 
 @Composable
@@ -118,7 +118,7 @@ private fun IllustFetchContent0(state: IllustFetchViewState, model: IllustFetchV
                                 onClick = {
                                     val startIndex = (i - 10).coerceAtLeast(0)
                                     val endIndex = (i + 10).coerceAtMost(data.itemCount - 1)
-                                    stack += IllustDetailRoute(
+                                    stack += createIllustDetailRoute(
                                         i - startIndex,
                                         // endIndex is exclusive, we should include it.
                                         data.itemSnapshotList.items.subList(startIndex, endIndex + 1).toList(),
