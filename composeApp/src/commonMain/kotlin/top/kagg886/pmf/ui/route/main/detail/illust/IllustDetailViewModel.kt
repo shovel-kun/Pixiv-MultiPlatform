@@ -32,6 +32,8 @@ import top.kagg886.pixko.module.user.UserLikePublicity
 import top.kagg886.pixko.module.user.followUser
 import top.kagg886.pixko.module.user.unFollowUser
 import top.kagg886.pmf.backend.AppConfig
+import top.kagg886.pmf.backend.archive.IllustArchiveManager
+import top.kagg886.pmf.backend.archive.previewUrisOrNull
 import top.kagg886.pmf.backend.database.AppDatabase
 import top.kagg886.pmf.backend.database.dao.BlackListItem
 import top.kagg886.pmf.backend.database.dao.BlackListType
@@ -56,6 +58,8 @@ class IllustDetailViewModel(private val illustId: Long) :
     private val client = PixivConfig.newAccountFromConfig()
     private val database by inject<AppDatabase>()
     private val black = database.blacklistDAO()
+    private val archiveManager = IllustArchiveManager()
+    private var archiveRequested = false
 
     fun toggleOrigin() = intent {
         val s = state
@@ -106,35 +110,34 @@ class IllustDetailViewModel(private val illustId: Long) :
         }
 
         val inWatchLater = database.watchLaterDAO().exists(WatchLaterType.ILLUST, illust.id.toLong())
+        val archive = archiveManager.find(illust.id)
 
-        if (illust.isUgoira) {
-            val loadingState = IllustDetailViewState.Loading()
-            if (showLoading || state !is IllustDetailViewState.Success) {
-                reduce {
-                    loadingState
-                }
+        val loadingState = IllustDetailViewState.Loading()
+        if (showLoading && state !is IllustDetailViewState.Success) {
+            reduce {
+                loadingState
             }
-            loadingState.data.tryEmit(getString(Res.string.getting_ugoira_metadata))
-            val meta = client.getUgoiraMetadata(illust)
-            val data = Json.encodeToString(meta).encodeBase64()
-            val url = "$UGOIRA_SCHEME://$data".toUri()
-            reduce { IllustDetailViewState.Success(illust, inWatchLater, url) }
-            IllustWarmCache.put(illust)
-            saveDataBase(illust)
+        }
+
+        val currentIllust = archive?.illust ?: illust
+        val archivedPreview = archive?.previewUrisOrNull()
+
+        if (currentIllust.isUgoira) {
+            val preview = archivedPreview ?: run {
+                loadingState.data.tryEmit(getString(Res.string.getting_ugoira_metadata))
+                val meta = client.getUgoiraMetadata(currentIllust)
+                val data = Json.encodeToString(meta).encodeBase64()
+                listOf("$UGOIRA_SCHEME://$data".toUri())
+            }
+            reduce { IllustDetailViewState.Success(currentIllust, inWatchLater, preview) }
+            IllustWarmCache.put(currentIllust)
+            saveDataBase(currentIllust)
             return@intent
         }
 
-        val options = buildList {
-            if (AppConfig.showOriginalImage) {
-                add(IllustImagesType.ORIGIN)
-            }
-            add(IllustImagesType.LARGE)
-            add(IllustImagesType.MEDIUM)
-        }
-
-        val img = illust.contentImages.get(*options.toTypedArray())!!.map(String::toUri)
+        val img = archivedPreview ?: previewUrisFor(currentIllust)
         reduce {
-            IllustDetailViewState.Success(illust, inWatchLater, img)
+            IllustDetailViewState.Success(currentIllust, inWatchLater, img)
         }
         IllustWarmCache.put(illust)
 
@@ -161,7 +164,7 @@ class IllustDetailViewModel(private val illustId: Long) :
             IllustWarmCache.put(refreshed)
             saveDataBase(refreshed)
 
-            val refreshedImages = refreshed.contentImages.get(*options.toTypedArray())!!.map(String::toUri)
+            val refreshedImages = archiveManager.find(refreshed.id)?.previewUrisOrNull() ?: previewUrisFor(refreshed)
             reduce {
                 IllustDetailViewState.Success(refreshed, inWatchLater, refreshedImages)
             }
@@ -184,6 +187,20 @@ class IllustDetailViewModel(private val illustId: Long) :
         return result.getOrThrow().also(IllustWarmCache::put) to true
     }
 
+    @OptIn(OrbitExperimental::class)
+    fun archiveCurrentIllust() = intent {
+        if (archiveRequested) return@intent
+        runOn<IllustDetailViewState.Success> {
+            archiveRequested = true
+            runCatching {
+                archiveManager.archive(state.illust, state.data)
+            }.onFailure {
+                archiveRequested = false
+                postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.load_failed)))
+            }
+        }
+    }
+
     private suspend fun saveDataBase(illust: Illust) {
         if (!AppConfig.recordIllustHistory) {
             return
@@ -195,6 +212,17 @@ class IllustDetailViewModel(private val illustId: Long) :
                 createTime = Clock.System.now().toEpochMilliseconds(),
             ),
         )
+    }
+
+    private fun previewUrisFor(illust: Illust): List<Uri> {
+        val options = buildList {
+            if (AppConfig.showOriginalImage) {
+                add(IllustImagesType.ORIGIN)
+            }
+            add(IllustImagesType.LARGE)
+            add(IllustImagesType.MEDIUM)
+        }
+        return illust.contentImages.get(*options.toTypedArray())!!.map(String::toUri)
     }
 
     @OptIn(OrbitExperimental::class)

@@ -54,6 +54,7 @@ import top.kagg886.filepicker.FilePicker
 import top.kagg886.filepicker.openFileSaver
 import top.kagg886.pmf.LocalSnackBarHost
 import top.kagg886.pmf.backend.Platform
+import top.kagg886.pmf.backend.archive.archivePathFromKey
 import top.kagg886.pmf.backend.currentPlatform
 import top.kagg886.pmf.backend.useTempFile
 import top.kagg886.pmf.copyImageToClipboard
@@ -285,6 +286,11 @@ fun ImagePreviewer(
 }
 
 fun PlatformContext.readBytes(key: String) = run {
+    archivePathFromKey(key)?.let { path ->
+        return@run path.source().buffer().use { src ->
+            src.readByteArray()
+        }
+    }
     val coil = SingletonImageLoader.get(this).diskCache!!
     coil.openSnapshot(key)?.use { snapshot ->
         snapshot.data.source().buffer().use { src ->

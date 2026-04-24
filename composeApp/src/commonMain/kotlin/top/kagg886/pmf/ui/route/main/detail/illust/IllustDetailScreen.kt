@@ -432,6 +432,7 @@ private fun IllustPreview(
                                     }
                                 }
                                 .clickable {
+                                    model.archiveCurrentIllust()
                                     startIndex = i
                                     preview = true
                                 },
