@@ -95,7 +95,7 @@ class IllustDetailViewModel(private val illustId: Long) :
             }
             return@intent
         }
-        val (illust, fetchedFresh) = resolved
+        val (illust, fetchedFresh, archive) = resolved
 
         if (black.matchRules(BlackListType.AUTHOR_ID, illust.user.id.toString())) {
             postSideEffect(IllustDetailSideEffect.Toast(getString(Res.string.blocking_because_black, getString(Res.string.user))))
@@ -110,7 +110,6 @@ class IllustDetailViewModel(private val illustId: Long) :
         }
 
         val inWatchLater = database.watchLaterDAO().exists(WatchLaterType.ILLUST, illust.id.toLong())
-        val archive = archiveManager.find(illust.id)
 
         val loadingState = IllustDetailViewState.Loading()
         if (showLoading && state !is IllustDetailViewState.Success) {
@@ -171,10 +170,15 @@ class IllustDetailViewModel(private val illustId: Long) :
         }
     }
 
-    private suspend fun resolveInitialIllust(): Pair<Illust, Boolean>? {
+    private suspend fun resolveInitialIllust(): ResolvedIllust? {
         val current = (container.stateFlow.value as? IllustDetailViewState.Success)?.illust ?: IllustWarmCache.get(illustId)
         if (current != null) {
-            return current to false
+            return ResolvedIllust(current, fetchedFresh = false, archive = archiveManager.find(current.id))
+        }
+
+        archiveManager.find(illustId.toInt())?.takeIf { it.previewUrisOrNull() != null }?.let {
+            IllustWarmCache.put(it.illust)
+            return ResolvedIllust(it.illust, fetchedFresh = false, archive = it)
         }
 
         val result = runCatching {
@@ -184,7 +188,8 @@ class IllustDetailViewModel(private val illustId: Long) :
             return null
         }
 
-        return result.getOrThrow().also(IllustWarmCache::put) to true
+        val illust = result.getOrThrow().also(IllustWarmCache::put)
+        return ResolvedIllust(illust, fetchedFresh = true, archive = archiveManager.find(illust.id))
     }
 
     @OptIn(OrbitExperimental::class)
@@ -365,6 +370,12 @@ class IllustDetailViewModel(private val illustId: Long) :
         }
     }
 }
+
+private data class ResolvedIllust(
+    val illust: Illust,
+    val fetchedFresh: Boolean,
+    val archive: top.kagg886.pmf.backend.database.dao.IllustArchive?,
+)
 
 sealed class IllustDetailViewState {
     data class Loading(val data: MutableStateFlow<String> = MutableStateFlow("")) :

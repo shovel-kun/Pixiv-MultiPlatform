@@ -53,10 +53,12 @@ import top.kagg886.pmf.LocalNavBackStack
 import top.kagg886.pmf.backend.pixiv.PixivConfig
 import top.kagg886.pmf.res.*
 import top.kagg886.pmf.ui.route.main.bookmark.BookmarkRoute
+import top.kagg886.pmf.ui.route.main.archive.ArchiveScreen
 import top.kagg886.pmf.ui.route.main.detail.author.AuthorScreenWithoutCollapse
 import top.kagg886.pmf.ui.route.main.download.DownloadScreen
 import top.kagg886.pmf.ui.route.main.history.HistoryScreen
 import top.kagg886.pmf.ui.route.main.later.ViewLaterScreen
+import top.kagg886.pmf.ui.route.main.profile.ProfileItem.Archive
 import top.kagg886.pmf.ui.route.main.profile.ProfileItem.Download
 import top.kagg886.pmf.ui.route.main.profile.ProfileItem.History
 import top.kagg886.pmf.ui.route.main.profile.ProfileItem.Setting
@@ -72,6 +74,7 @@ enum class ProfileItem {
     History,
     ViewLater,
     Download,
+    Archive,
     Setting,
 }
 
@@ -130,6 +133,24 @@ fun ProfileScreen(route: ProfileRoute) {
                     selected = page == ViewProfile,
                     onClick = {
                         page = ViewProfile
+                        scope.launch {
+                            drawer.close()
+                        }
+                    },
+                )
+
+                Spacer(Modifier.height(8.dp))
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    label = {
+                        Text(stringResource(Res.string.archive))
+                    },
+                    icon = {
+                        Icon(top.kagg886.pmf.ui.component.icon.Save, "")
+                    },
+                    selected = page == Archive,
+                    onClick = {
+                        page = Archive
                         scope.launch {
                             drawer.close()
                         }
@@ -241,6 +262,7 @@ fun ProfileScreen(route: ProfileRoute) {
                         History -> HistoryScreen()
                         ViewLater -> ViewLaterScreen()
                         Download -> DownloadScreen()
+                        Archive -> ArchiveScreen()
                         Setting -> SettingScreen()
                     }
                 }
@@ -259,6 +281,7 @@ fun ProfileScreen(route: ProfileRoute) {
                                     ViewProfile -> stringResource(Res.string.personal_profile)
                                     History -> stringResource(Res.string.history)
                                     Download -> stringResource(Res.string.download_manager)
+                                    Archive -> stringResource(Res.string.archive)
                                     Setting -> stringResource(Res.string.settings)
                                     ViewLater -> stringResource(Res.string.watch_later)
                                 },

@@ -15,6 +15,7 @@
     <string name="app_crash_title">應用程式崩潰了！</string>
     <string name="app_language">應用語言</string>
     <string name="app_language_feature_pr">若您要新增對應語言的支援，請前往 GitHub 提交 issue</string>
+    <string name="archive">存檔</string>
     <string name="appearance">外觀</string>
     <string name="auto_typography">自動排版</string>
     <string name="auto_typography_description">移除多餘的空行，並首行縮排 %1$ssp</string>

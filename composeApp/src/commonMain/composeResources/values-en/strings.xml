@@ -15,6 +15,7 @@
     <string name="app_crash_title">App crashed!</string>
     <string name="app_language">Language</string>
     <string name="app_language_feature_pr">you can issue for your language in Github</string>
+    <string name="archive">Archive</string>
     <string name="appearance">Appearance</string>
     <string name="auto_typography">Auto Typography</string>
     <string name="auto_typography_description">Remove extra spaces, indent %1$ssp</string>

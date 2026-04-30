@@ -20,6 +20,8 @@ import okio.buffer
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import top.kagg886.pixko.module.illust.Illust
+import top.kagg886.pixko.module.illust.IllustImagesType
+import top.kagg886.pixko.module.illust.get
 import top.kagg886.pmf.backend.dataPath
 import top.kagg886.pmf.backend.database.AppDatabase
 import top.kagg886.pmf.backend.database.dao.IllustArchive
@@ -48,15 +50,17 @@ fun illustArchiveDir(illustId: Int) = archiveRoot.resolve(illustId.toString())
 
 fun archiveUri(illustId: Int, fileName: String): Uri = "$ILLUST_ARCHIVE_SCHEME://$illustId/$fileName".toUri()
 
-fun archivePathFromKey(key: String) = key.takeIf { it.startsWith("$ILLUST_ARCHIVE_SCHEME://") }?.let {
+fun archiveKeyParts(key: String): Pair<Int, String>? = key.takeIf { it.startsWith("$ILLUST_ARCHIVE_SCHEME://") }?.let {
     val payload = it.removePrefix("$ILLUST_ARCHIVE_SCHEME://")
     val illustId = payload.substringBefore("/")
     val fileName = payload.substringAfter("/", "")
     if (illustId.isBlank() || fileName.isBlank()) {
         return@let null
     }
-    illustArchiveDir(illustId.toInt()).resolve(fileName)
+    illustId.toIntOrNull()?.let { id -> id to fileName }
 }
+
+fun archivePathFromKey(key: String) = archiveKeyParts(key)?.let { (illustId, fileName) -> illustArchiveDir(illustId).resolve(fileName) }
 
 fun IllustArchive.previewUrisOrNull() = fileNames.takeIf { it.isNotEmpty() && it.all { file -> illustArchiveDir(illustId).resolve(file).exists() } }
     ?.map { archiveUri(illustId, it) }
@@ -95,28 +99,44 @@ class IllustArchiveManager : KoinComponent {
 
     suspend fun find(illustId: Int) = database.illustArchiveDao().find(illustId)
 
+    suspend fun deleteIncompleteArchives() {
+        val dao = database.illustArchiveDao()
+        dao.list().filter { it.previewUrisOrNull() == null }.forEach {
+            dao.delete(it.illustId)
+        }
+    }
+
     suspend fun archive(illust: Illust, media: List<Uri>) {
-        if (media.isEmpty()) return
+        val archiveMedia = mediaForArchive(illust, media)
+        if (archiveMedia.isEmpty()) return
 
         val targetDir = illustArchiveDir(illust.id)
         targetDir.mkdirs()
 
-        val files = if (media.singleOrNull()?.scheme == UGOIRA_SCHEME) {
-            listOf(storeUgoira(media.single(), targetDir))
+        val files = if (archiveMedia.singleOrNull()?.scheme == UGOIRA_SCHEME) {
+            listOf(storeUgoira(archiveMedia.single(), targetDir))
         } else {
-            media.mapIndexed { index, uri ->
+            archiveMedia.mapIndexed { index, uri ->
                 storeImage(index, uri, targetDir)
             }
         }
+
+        if (files.isEmpty() || files.any { !targetDir.resolve(it).exists() }) return
 
         database.illustArchiveDao().insert(
             IllustArchive(
                 illustId = illust.id,
                 illust = illust,
-                mediaType = if (media.singleOrNull()?.scheme == UGOIRA_SCHEME) IllustArchiveMediaType.UGOIRA else IllustArchiveMediaType.IMAGE,
+                mediaType = if (archiveMedia.singleOrNull()?.scheme == UGOIRA_SCHEME) IllustArchiveMediaType.UGOIRA else IllustArchiveMediaType.IMAGE,
                 mediaFiles = Json.encodeToString(files),
             ),
         )
+    }
+
+    private fun mediaForArchive(illust: Illust, currentMedia: List<Uri>): List<Uri> {
+        if (currentMedia.singleOrNull()?.scheme == UGOIRA_SCHEME) return currentMedia
+        return illust.contentImages[IllustImagesType.ORIGIN]?.map(String::toUri)?.takeIf { it.isNotEmpty() }
+            ?: currentMedia
     }
 
     private suspend fun storeImage(index: Int, uri: Uri, targetDir: okio.Path): String {

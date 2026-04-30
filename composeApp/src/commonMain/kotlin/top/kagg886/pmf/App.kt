@@ -113,6 +113,7 @@ import top.kagg886.pmf.ui.route.login.v2.LoginScreen
 import top.kagg886.pmf.ui.route.login.v2.LoginScreenViewModel
 import top.kagg886.pmf.ui.route.main.about.AboutRoute
 import top.kagg886.pmf.ui.route.main.about.AboutScreen
+import top.kagg886.pmf.ui.route.main.archive.IllustArchiveViewModel
 import top.kagg886.pmf.ui.route.main.bookmark.BookmarkIllustViewModel
 import top.kagg886.pmf.ui.route.main.bookmark.BookmarkNovelViewModel
 import top.kagg886.pmf.ui.route.main.bookmark.BookmarkRoute
@@ -552,6 +553,7 @@ fun setupEnv() {
 
                 single { HistoryIllustViewModel() }
                 single { HistoryNovelViewModel() }
+                viewModelOf(::IllustArchiveViewModel)
 
                 single { NewestIllustViewModel() }
 
