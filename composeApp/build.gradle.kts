@@ -317,6 +317,9 @@ android {
     dependencies {
         debugImplementation(compose.uiTooling)
     }
+    lint {
+        disable.add("Instantiatable")
+    }
 }
 
 compose.resources {
